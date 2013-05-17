@@ -1,0 +1,23 @@
+Name:           fac
+Version:        0.1
+Author:         Henning Günther
+Description:    The Fast Aiger Checker
+Build-Type:     Simple
+Cabal-Version:  >= 1.2
+
+Executable fac
+  Main-Is: Main.hs
+  Build-Depends: base,containers
+  Extensions:    ForeignFunctionInterface,CApiFFI,GeneralizedNewtypeDeriving
+  Other-Modules:
+    Minisat
+  Include-Dirs: minisat
+  Includes:
+    CInterface.h
+  C-Sources:
+    minisat/CInterface.cpp
+    minisat/Proof.cpp
+    minisat/Solver.cpp
+    minisat/File.cpp
+    minisat/CProof.cpp
+  Extra-Libraries: stdc++
