@@ -33,6 +33,7 @@ Executable fac
   Other-Modules:
     Minisat
     Formula
+    Aiger
   Include-Dirs: minisat
   Includes:
     CInterface.h

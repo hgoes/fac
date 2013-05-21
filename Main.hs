@@ -6,6 +6,7 @@ import Data.IORef
 import Data.Map as Map
 import Foreign.C
 import Formula
+import Aiger
 
 data ProofNode = ProofRoot [Lit]
                | ProofChain [ProofNode] [Var]
