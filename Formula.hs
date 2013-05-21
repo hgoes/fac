@@ -89,6 +89,7 @@ data PropL var
   | Not (PropL var)
   | And (PropL var) (PropL var)
   | Or (PropL var) (PropL var)
+  deriving (Functor)
 
 toCNF :: PropL Var -> Var -> (Formula,Var)
 toCNF (Atom v) nxt = (formulaLiteral $ lp v,nxt)

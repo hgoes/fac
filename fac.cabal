@@ -29,7 +29,7 @@ Flag BrokenGCC
 Executable fac
   Main-Is: Main.hs
   Build-Depends: base >= 3 && < 5,containers
-  Extensions:    ForeignFunctionInterface,CApiFFI,GeneralizedNewtypeDeriving
+  Extensions:    ForeignFunctionInterface,CApiFFI,GeneralizedNewtypeDeriving,DeriveFunctor
   Other-Modules:
     Minisat
     Formula
