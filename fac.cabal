@@ -34,6 +34,7 @@ Executable fac
     Minisat
     Formula
     Aiger
+    Literal
   Include-Dirs: minisat
   Includes:
     CInterface.h
