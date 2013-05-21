@@ -21,13 +21,16 @@ runghc Setup.hs install
 
 Issues
 ------
-- [x] Right now, the program doesn't work with gcc-4.5, as explained in issue #1.
-      A workaround is to provide cabal with the flag "BrokenGCC":
-      ```
-      cabal install -fBrokenGCC
-      ```
-      Or
-      ```
-      runghc Setup.hs configure -fBrokenGCC
-      ```
+- Right now, the program doesn't work with gcc-4.5, as explained in issue #1.
+  A workaround is to provide cabal with the flag "BrokenGCC":
+  
+  ```
+  cabal install -fBrokenGCC
+  ```
+  
+  Or
+  
+  ```
+  runghc Setup.hs configure -fBrokenGCC
+  ```
       
