@@ -18,3 +18,7 @@ runghc Setup.hs configure
 runghc Setup.hs build
 runghc Setup.hs install
 ```
+
+Issues
+------
+- [ ] Right now, the program doesn't work with gcc-4.5, as explained in issue #1.
