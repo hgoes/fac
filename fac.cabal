@@ -22,6 +22,10 @@ Extra-Source-Files:
   minisat/Sort.h
   minisat/VarOrder.h
 
+Flag BrokenGCC
+  Description:  Provide a workaround for gcc-4.5
+  Default:      False
+
 Executable fac
   Main-Is: Main.hs
   Build-Depends: base >= 3 && < 5,containers
@@ -39,6 +43,8 @@ Executable fac
     minisat/File.cpp
     minisat/CProof.cpp
   Extra-Libraries: stdc++
+  if flag(BrokenGCC)
+    CC-Options: -fno-tree-pre
 
 Source-Repository head
   Type:         git
