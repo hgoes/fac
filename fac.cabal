@@ -1,16 +1,34 @@
 Name:           fac
 Version:        0.1
 Author:         Henning Günther
-Description:    The Fast Aiger Checker
+Maintainer:     Henning Günther <guenther@forsyte.at>
+Synopsis:       The Fast Aiger Checker
+Description:    A model checker for Aiger files developed for the "Software Model Checking" course @ TU Vienna in 2013.
+Category:       Formal Methods
+License:        GPL-3
+License-File:   LICENSE
 Build-Type:     Simple
-Cabal-Version:  >= 1.2
+Cabal-Version:  >= 1.6
+Extra-Source-Files:
+  minisat/CInterface.h
+  minisat/CProof.h
+  minisat/CTypes.h
+  minisat/File.h
+  minisat/Global.h
+  minisat/Heap.h
+  minisat/Proof.h
+  minisat/Solver.h
+  minisat/SolverTypes.h
+  minisat/Sort.h
+  minisat/VarOrder.h
 
 Executable fac
   Main-Is: Main.hs
-  Build-Depends: base,containers
+  Build-Depends: base >= 3 && < 5,containers
   Extensions:    ForeignFunctionInterface,CApiFFI,GeneralizedNewtypeDeriving
   Other-Modules:
     Minisat
+    Formula
   Include-Dirs: minisat
   Includes:
     CInterface.h
@@ -21,3 +39,7 @@ Executable fac
     minisat/File.cpp
     minisat/CProof.cpp
   Extra-Libraries: stdc++
+
+Source-Repository head
+  Type:         git
+  Location:     git://github.com/hguenther/fac.git
