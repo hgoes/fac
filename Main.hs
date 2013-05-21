@@ -3,13 +3,14 @@ module Main where
 import Control.Monad
 import Minisat
 import Data.IORef
-import Data.Map as Map
+import Data.Map as Map hiding (foldl)
 import Foreign.C
 import Formula
 import Aiger
 import Literal
+import qualified Data.IntSet as IntSet
 
-data ProofNode = ProofRoot [Lit]
+data ProofNode = ProofRoot Clause
                | ProofChain [ProofNode] [Var]
                deriving Show
 
@@ -20,7 +21,7 @@ proofBuilder :: ProofBuilder
 proofBuilder = ProofBuilder Map.empty 0
 
 proofBuilderRoot :: [Lit] -> ProofBuilder -> ProofBuilder
-proofBuilderRoot lits builder = builder { proofNodes = Map.insert (nextNode builder) (ProofRoot lits) (proofNodes builder)
+proofBuilderRoot lits builder = builder { proofNodes = Map.insert (nextNode builder) (ProofRoot $ Clause $ IntSet.fromList $ fmap litId lits) (proofNodes builder)
                                         , nextNode = succ (nextNode builder)
                                         }
 
@@ -35,6 +36,14 @@ proofBuilderDelete cl builder = builder { proofNodes = Map.delete cl (proofNodes
 
 proofBuilderGet :: ProofBuilder -> ProofNode
 proofBuilderGet builder = (proofNodes builder)!(pred $ nextNode builder)
+
+proofVerify :: ProofNode -> Clause
+proofVerify (ProofRoot cl) = cl
+proofVerify (ProofChain cls vars)
+  = Clause $ foldl (\cset var -> IntSet.delete (litId $ lp var) $
+                                 IntSet.delete (litId $ ln var) $
+                                 cset
+                   ) (IntSet.unions $ fmap (\(Clause cl) -> cl) (fmap proofVerify cls)) vars
 
 main = do
   --print $ toCNF (And (Atom 1) (Or (Atom 2) (Not $ And (Atom 3) (Atom 4)))) 5
@@ -72,4 +81,5 @@ main = do
     ,[lp v1,ln v2,ln v4]]
   solverSolve solv >>= print
   solverGetModel solv >>= print
-  readIORef builder >>= print . proofBuilderGet
+  proof <- fmap proofBuilderGet (readIORef builder)
+  print $ proofVerify proof

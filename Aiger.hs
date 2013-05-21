@@ -1,12 +1,12 @@
 module Aiger where
 
-data AigerLit = AigerLit { litId :: Integer
-                         , litNegated :: Bool }
+data AigerLit = AigerLit { aigerLitId :: Integer
+                         , aigerLitNegated :: Bool }
 
 instance Show AigerLit where
-  show lit = (if litNegated lit
+  show lit = (if aigerLitNegated lit
               then "!"
-              else "")++show (litId lit)
+              else "")++show (aigerLitId lit)
 
 readLit :: String -> AigerLit
 readLit = toLit . read
