@@ -1,7 +1,7 @@
 #include "CProof.h"
 
 void CProofTraverser::root(const vec<Lit>& c) {
-  root_fun((const lit_t*)(&*c),c.size());
+  root_fun((const int*)(&*c),c.size());
 }
 
 void CProofTraverser::chain(const vec<ClauseId>& cs,const vec<Var>& xs) {

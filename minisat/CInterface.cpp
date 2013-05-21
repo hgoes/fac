@@ -6,9 +6,6 @@
 struct solver_t : public Solver {
 };
 
-struct lit_t : public Lit {
-};
-
 extern "C" {
 
 #include "CInterface.h"
@@ -17,7 +14,7 @@ extern "C" {
     return new solver_t();
   }
   void solver_add_proof_log(solver_t* self,
-                            void (*root_fun)(const lit_t* c,int size),
+                            void (*root_fun)(const int* c,int size),
                             void (*chain_fun)(const int* cs,int size1,const int* xs,int size2),
                             void (*deleted_fun)(int c),
                             void (*done_fun)()) {
@@ -32,7 +29,7 @@ extern "C" {
   int solver_new_var(solver_t* self) {
     return self->newVar();
   }
-  void solver_add_clause(solver_t* self,lit_t* lits,int size) {
+  void solver_add_clause(solver_t* self,int* lits,int size) {
     vec<Lit> v((Lit*)lits,size);
     self->addClause(v);
     v.release();
@@ -40,7 +37,7 @@ extern "C" {
   bool solver_solve(solver_t* self) {
     return self->solve();
   }
-  bool solver_solve_with(solver_t* self,lit_t* assumps,int size) {
+  bool solver_solve_with(solver_t* self,int* assumps,int size) {
     vec<Lit> v((Lit*)assumps,size);
     bool res = self->solve(v);
     v.release();

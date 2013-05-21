@@ -5,7 +5,7 @@
 #include "Proof.h"
 
 struct CProofTraverser : public ProofTraverser {
-  void (*root_fun)(const lit_t* c,int size);
+  void (*root_fun)(const int* c,int size);
   void (*chain_fun)(const int* cs,int size1,const int* xs,int size2);
   void (*deleted_fun)(int c);
   void (*done_fun)();
