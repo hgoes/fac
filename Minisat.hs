@@ -41,11 +41,11 @@ solverAddProofLog :: Solver -> ([Lit] -> IO ()) -> ([CInt] -> [Var] -> IO ()) ->
 solverAddProofLog solver root chain deleted done = do
   root' <- mkRootFun (\arr sz -> do
                          lst <- peekArray (fromIntegral sz) arr
-                         root (fmap Lit lst))
+                         root (fmap (Lit . fromIntegral) lst))
   chain' <- mkChainFun (\carr csz varr vsz -> do
                            clst <- peekArray (fromIntegral csz) carr
                            vlst <- peekArray (fromIntegral vsz) varr
-                           chain clst (fmap Var vlst))
+                           chain clst (fmap (Var . fromIntegral) vlst))
   deleted' <- mkDeletedFun deleted
   done' <- mkDoneFun done
   solverAddProofLog' solver root' chain' deleted' done'

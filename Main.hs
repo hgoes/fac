@@ -7,6 +7,7 @@ import Data.Map as Map
 import Foreign.C
 import Formula
 import Aiger
+import Literal
 
 data ProofNode = ProofRoot [Lit]
                | ProofChain [ProofNode] [Var]
@@ -37,7 +38,7 @@ proofBuilderGet builder = (proofNodes builder)!(pred $ nextNode builder)
 
 main = do
   --print $ toCNF (And (Atom 1) (Or (Atom 2) (Not $ And (Atom 3) (Atom 4)))) 5
-  print $ toCNF (Or (And (Atom 1) (Atom 2)) (And (Atom 3) (Atom 4))) 5
+  print $ toCNF (Or (And (Atom 1) (Atom 2)) (And (Atom 3) (Atom 4))) (Var 5)
   solv <- solverNew
   {-
  1  2 -3 0
