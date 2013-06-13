@@ -49,7 +49,13 @@ solverAddProofLog solver root chain deleted done = do
   deleted' <- mkDeletedFun deleted
   done' <- mkDoneFun done
   solverAddProofLog' solver root' chain' deleted' done'
-                         
+
+solverSolveWith :: Solver -> [Lit] -> IO Bool
+solverSolveWith solver cl = do
+  let sz = length cl
+  arr <- mallocArray sz
+  pokeArray arr cl
+  solverSolveWith_ solver arr (fromIntegral sz)
 
 foreign import capi "CInterface.h solver_new"
   solverNew :: IO Solver
@@ -87,7 +93,7 @@ foreign import capi "CInterface.h solver_solve"
   solverSolve :: Solver -> IO Bool
 
 foreign import capi "CInterface.h solver_solve_with"
-  solverSolveWith :: Solver -> Ptr CInt -> CInt -> IO ()
+  solverSolveWith_ :: Solver -> Ptr Lit -> CInt -> IO Bool
 
 foreign import capi "CInterface.h solver_get_model"
   solverGetModel' :: Solver -> Ptr (Ptr CInt) -> IO CInt
