@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad
+import Control.Monad.State
 import Minisat
 import Data.IORef
 import Data.Map as Map hiding (foldl)
@@ -47,7 +48,11 @@ proofVerify (ProofChain cls vars)
 
 main = do
   --print $ toCNF (And (Atom 1) (Or (Atom 2) (Not $ And (Atom 3) (Atom 4)))) 5
-  print $ toCNF (Or (And (Atom 1) (Atom 2)) (And (Atom 3) (Atom 4))) (Var 5)
+  print $ evalState (toCNF (do
+                               nxt <- get
+                               put $ nxt { varId = succ (varId nxt) }
+                               return nxt)
+                     (Or (And (Atom 1) (Atom 2)) (And (Atom 3) (Atom 4)))) (Var 5)
   solv <- solverNew
   {-
  1  2 -3 0

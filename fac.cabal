@@ -28,7 +28,7 @@ Flag BrokenGCC
 
 Executable fac
   Main-Is: Main.hs
-  Build-Depends: base >= 3 && < 5,containers
+  Build-Depends: base >= 3 && < 5,containers,mtl
   Extensions:    ForeignFunctionInterface,CApiFFI,GeneralizedNewtypeDeriving,DeriveFunctor
   Other-Modules:
     Minisat
