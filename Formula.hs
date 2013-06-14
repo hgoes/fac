@@ -6,7 +6,6 @@ import qualified Data.List as List (intersperse)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Monoid
-import Control.Applicative
 import Literal
 
 newtype Clause = Clause { clauseSet :: IntSet }
@@ -88,13 +87,41 @@ formulaFromList :: [[Lit]] -> Formula
 formulaFromList = Formula . Set.fromList . fmap (Clause . IntSet.fromList . fmap litId)
 
 data PropL var
-  = Atom var
+  = Const Bool
+  | Atom var
   | Not (PropL var)
   | And (PropL var) (PropL var)
   | Or (PropL var) (PropL var)
-  deriving (Functor)
+  deriving (Eq,Functor,Show)
+
+simplify :: Eq var => PropL var -> PropL var
+simplify (Not f) = case simplify f of
+  Not f' -> f'
+  Const x -> Const $ not x
+  And x y -> Or (simplify (Not x)) (simplify (Not y))
+  Or x y -> And (simplify (Not x)) (simplify (Not y))
+  f' -> Not f'
+simplify (And x y) = case (simplify x,simplify y) of
+  (Const True,y') -> y'
+  (Const False,_) -> Const False
+  (x',Const True) -> x'
+  (_,Const False) -> Const False
+  (x',y') -> if x'==y'
+             then x'
+             else And x' y'
+simplify (Or x y) = case (simplify x,simplify y) of
+  (Const True,_) -> Const True
+  (Const False,y') -> y'
+  (_,Const True) -> Const True
+  (x',Const False) -> x'
+  (x',y') -> if x'==y'
+             then x'
+             else Or x' y'
+simplify x = x
 
 toCNF :: Monad m => m Var -> PropL Var -> m Formula
+toCNF nxt (Const True) = return $ Formula Set.empty
+toCNF nxt (Const False) = return $ Formula $ Set.singleton (Clause IntSet.empty)
 toCNF nxt (Atom v) = return $ formulaLiteral $ lp v
 toCNF nxt (And x y) = do
   fx <- toCNF nxt x
@@ -104,12 +131,14 @@ toCNF nxt (Or x y) = do
   (Clause clx,Formula fx) <- toClause nxt x
   (Clause cly,Formula fy) <- toClause nxt y
   return $ Formula $ Set.insert (Clause $ IntSet.union clx cly) (Set.union fx fy)
+toCNF nxt (Not (Const x)) = toCNF nxt (Const $ not x)
 toCNF nxt (Not (Not x)) = toCNF nxt x
 toCNF nxt (Not (Atom v)) = return $ formulaLiteral $ ln v
 toCNF nxt (Not (Or x y)) = toCNF nxt (And (Not x) (Not y))
 toCNF nxt (Not (And x y)) = toCNF nxt (Or (Not x) (Not y))
 
 toClause :: Monad m => m Var -> PropL Var -> m (Clause,Formula)
+toClause nxt (Const False) = return (Clause IntSet.empty,formulaEmpty)
 toClause nxt (Atom v) = return (Clause $ IntSet.singleton $ litId $ lp v,formulaEmpty)
 toClause nxt (Or x y) = do
   (Clause clx,Formula fx) <- toClause nxt x
@@ -123,6 +152,7 @@ toClause nxt f = do
 
 tseitin :: Monad m => m Var -> PropL Var -> m (Formula,Lit)
 tseitin nxt (Atom x) = return (formulaEmpty,lp x)
+tseitin nxt (Not (And (Not x) (Not y))) = tseitin nxt (Or x y)
 tseitin nxt (Not x) = do
   (f1,lit) <- tseitin nxt x
   return (f1,litNeg lit)

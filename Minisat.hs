@@ -7,6 +7,7 @@ module Minisat
        ,solverAddClause
        ,solverOk
        ,solverSolve
+       ,solverSolveWith
        ,solverGetModel
        ,solverAddProofLog
        ) where

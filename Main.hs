@@ -1,15 +1,17 @@
 module Main where
 
-import Control.Monad
-import Control.Monad.State
 import Minisat
 import Data.IORef
 import Data.Map as Map hiding (foldl)
+import Prelude hiding (foldl,mapM_)
 import Foreign.C
 import Formula
 import Aiger
 import Literal
+import Unrolling
 import qualified Data.IntSet as IntSet
+import System.Environment
+import Data.Foldable
 
 data ProofNode = ProofRoot Clause
                | ProofChain [ProofNode] [Var]
@@ -47,44 +49,15 @@ proofVerify (ProofChain cls vars)
                    ) (IntSet.unions $ fmap (\(Clause cl) -> cl) (fmap proofVerify cls)) vars
 
 main = do
-  --print $ toCNF (And (Atom 1) (Or (Atom 2) (Not $ And (Atom 3) (Atom 4)))) 5
-  print $ evalState (toCNF (do
-                               nxt <- get
-                               put $ nxt { varId = succ (varId nxt) }
-                               return nxt)
-                     (Or (And (Atom 1) (Atom 2)) (And (Atom 3) (Atom 4)))) (Var 5)
-  solv <- solverNew
-  {-
- 1  2 -3 0
--1 -2  3 0
- 2  3 -4 0
--2 -3  4 0
- 1  3  4 0
--1 -3 -4 0
--1  2  4 0
- 1 -2 -4 0
--}
-  builder <- newIORef proofBuilder
-  solverAddProofLog solv
-    (modifyIORef builder . proofBuilderRoot)
-    (\cls vars -> modifyIORef builder $ proofBuilderChain cls vars)
-    (modifyIORef builder . proofBuilderDelete)
-    (putStrLn "Done!")
-  vars@[v1,v2,v3,v4] <- replicateM 4 (solverNewVar solv)
-  print vars
-  mapM_ (\cl -> do
-            --solverOk solv >>= print
-            --print cl
-            solverAddClause solv cl)
-    [[lp v1,lp v2,ln v3]
-    ,[ln v1,ln v2,lp v3]
-    ,[lp v2,lp v3,ln v4]
-    ,[ln v2,ln v3,lp v4]
-    ,[lp v1,lp v3,lp v4]
-    ,[ln v1,ln v3,ln v4]
-    ,[ln v1,lp v2,lp v4]
-    ,[lp v1,ln v2,ln v4]]
-  solverSolve solv >>= print
-  solverGetModel solv >>= print
-  proof <- fmap proofBuilderGet (readIORef builder)
-  print $ proofVerify proof
+  [file,limit] <- getArgs
+  aiger_str <- readFile file
+  let aiger = readAiger aiger_str :: Aiger Lit
+  solver <- solverNew
+  let init = initialUnrollment
+             (solverNewVar solver)
+             (\(Formula f) -> mapM_ (\cl -> solverAddClause solver (clauseLits cl)) f)
+             (\vars -> solverSolveWith solver [ lit var sgn | (var,sgn) <- vars ])
+             (solverGetModel solver)
+             aiger
+  last <- foldlM (\cur _ -> stepUnrollment cur) init [1..(read limit)]
+  checkUnrollment last >>= print
