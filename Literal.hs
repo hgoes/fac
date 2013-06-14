@@ -12,7 +12,7 @@ instance Read Lit where
   readPrec = fmap Lit readPrec
 
 instance Show Lit where
-  show l = if litSign l
+  show l = if litIsP l
            then (show $ litVar l)
            else ("!"++show (litVar l))
 
@@ -26,7 +26,7 @@ class Literal l where
   ln :: Var -> l
   ln v = lit v False
   litVar :: l -> Var
-  litSign :: l -> Bool
+  litIsP :: l -> Bool
   litNeg :: l -> l
 
 instance Literal Lit where
@@ -34,5 +34,5 @@ instance Literal Lit where
   lp (Var var) = Lit (var+var)
   ln (Var var) = Lit (var+var+1)
   litVar (Lit x) = Var (x `shiftR` 1)
-  litSign (Lit x) = (x .&. 1) /= 0
+  litIsP (Lit x) = (x .&. 1) == 0
   litNeg (Lit x) = Lit (x `xor` 1)

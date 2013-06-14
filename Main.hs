@@ -9,6 +9,7 @@ import Formula
 import Aiger
 import Literal
 import Unrolling
+import Simulator
 import qualified Data.IntSet as IntSet
 import System.Environment
 import Data.Foldable
@@ -60,4 +61,9 @@ main = do
              (solverGetModel solver)
              aiger
   last <- foldlM (\cur _ -> stepUnrollment cur) init [1..(read limit)]
-  checkUnrollment last >>= print
+  res <- checkUnrollment last
+  case res of
+    Nothing -> putStrLn "No errors found."
+    Just cex -> do
+      putStrLn $ "Counterexample: "++show cex
+      print $ simulateAiger aiger cex

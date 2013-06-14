@@ -1,6 +1,6 @@
 module Minisat
        (Var()
-       ,Lit(),lit,lp,ln,litVar,litSign
+       ,Lit(),lit,lp,ln,litVar,litIsP
        ,Solver()
        ,solverNew
        ,solverNewVar

@@ -28,7 +28,7 @@ formulaForGate nxt assert aiger num_uses mp gate = case Map.lookup gate mp of --
 
       --trace ((if litSign gate then "" else "!") ++ show f1 ++ " && " ++ show f2) (return ())
 
-      let rf = simplify $ if litSign gate
+      let rf = simplify $ if litIsP gate
                           then And f1 f2
                           else Not (And f1 f2)
       --trace (" => " ++ show rf) (return ())
@@ -48,7 +48,7 @@ formulaForGate nxt assert aiger num_uses mp gate = case Map.lookup gate mp of --
             (rf',rlit) <- tseitin nxt rf
             -- Assert the resulting formula
             assert rf'
-            let res = if litSign rlit
+            let res = if litIsP rlit
                       then Atom (litVar rlit)
                       else Not (Atom (litVar rlit))
             return (res,Map.insert gate res mp2)
@@ -57,7 +57,7 @@ stepSystem :: (Monad m,Literal gate,Ord gate) => m Var -> (Formula -> m ()) -> A
 stepSystem nxt assert aiger num_uses mp = do
   ninps <- foldlM (\inp_map inp -> do
                       var <- nxt
-                      let res = if litSign inp
+                      let res = if litIsP inp
                                 then Atom var
                                 else Not (Atom var)
                       return (Map.insert inp res inp_map)
@@ -107,7 +107,14 @@ stepUnrollment unroll = do
                   , unrollmentOutputs = nout:(unrollmentOutputs unroll)
                   }
 
-checkUnrollment :: Monad m => Unrollment m gate -> m (Maybe [Map gate Bool])
+getFormulaValue :: PropL Var -> [Bool] -> Bool
+getFormulaValue (Const x) mdl = x
+getFormulaValue (Atom v) mdl = List.genericIndex mdl v
+getFormulaValue (Not f) mdl = not $ getFormulaValue f mdl
+getFormulaValue (And x y) mdl = (getFormulaValue x mdl) && (getFormulaValue y mdl)
+getFormulaValue (Or x y) mdl = (getFormulaValue x mdl) || (getFormulaValue y mdl)
+
+checkUnrollment :: (Monad m,Literal gate) => Unrollment m gate -> m (Maybe [Map Var Bool])
 checkUnrollment unroll = do
   let cond = simplify $ foldl1 Or [ f | outp <- unrollmentOutputs unroll, f <- Map.elems outp ]
   cond_cnf <- toCNF (unrollmentNewVar unroll) cond
@@ -116,8 +123,9 @@ checkUnrollment unroll = do
   if res
     then (do
              model <- unrollmentGetModel unroll
-             return $ Just $ fmap (fmap (\var -> case var of
-                                            Atom v -> List.genericIndex model v
-                                            Not (Atom v) -> not $ List.genericIndex model v
-                                        )) (unrollmentInputs unroll))
+             return $ Just [ Map.fromList [ (litVar gate,if litIsP gate
+                                                         then getFormulaValue f model
+                                                         else not $ getFormulaValue f model)
+                                          | (gate,f) <- Map.toList inp_mp ]
+                           | inp_mp <- unrollmentInputs unroll ])
     else return Nothing
