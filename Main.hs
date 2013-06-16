@@ -52,7 +52,7 @@ proofVerify (ProofChain cls vars)
 main = do
   [file,limit] <- getArgs
   aiger_str <- readFile file
-  let aiger = readAiger aiger_str :: Aiger Lit
+  let aiger = optimizeAiger (readAiger aiger_str :: Aiger Lit)
   solver <- solverNew
   let init = initialUnrollment
              (solverNewVar solver)

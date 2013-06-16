@@ -9,37 +9,30 @@ import qualified Data.List as List
 import Data.Map as Map hiding (foldl)
 import Prelude hiding (foldl,foldl1)
 
-import Debug.Trace
-
-formulaForGate :: (Monad m,Literal gate,Ord gate) => m Var -> (Formula -> m ()) -> Aiger gate -> Map Var Int -> Map gate (PropL Var) -> gate -> m (PropL Var,Map gate (PropL Var))
-formulaForGate nxt assert aiger num_uses mp gate = case Map.lookup gate mp of -- Did we already translate this gate?
+formulaForGate :: (Monad m,AigerC aiger) => m Var -> (Formula -> m ()) -> aiger -> Map Var Int -> Map Var (PropL Var) -> Var -> Bool -> m (PropL Var,Map Var (PropL Var))
+formulaForGate nxt assert aiger num_uses mp gate gpos = case Map.lookup gate mp of -- Did we already translate this gate?
   -- Yes, great, return it.
-  Just fgate -> return (fgate,mp)
-  -- No. Maybe we have translated its negation?
-  Nothing -> case Map.lookup (litNeg gate) mp of
-    -- Yes, great, negate it and return it.
-    Just fgate -> return (Not fgate,Map.insert gate (Not fgate) mp)
-    -- No.
-    Nothing -> do
-      -- Looks like we actually have to do some work...
-      let (in1,in2) = getGate (litVar gate) aiger
-      (f1,mp1) <- formulaForGate nxt assert aiger num_uses mp in1
-      (f2,mp2) <- formulaForGate nxt assert aiger num_uses mp1 in2
-
-      --trace ((if litSign gate then "" else "!") ++ show f1 ++ " && " ++ show f2) (return ())
-
-      let rf = simplify $ if litIsP gate
-                          then And f1 f2
-                          else Not (And f1 f2)
-      --trace (" => " ++ show rf) (return ())
-      
+  Just fgate -> if gpos
+                then return (fgate,mp)
+                else (case fgate of
+                         Not f -> return (f,mp)
+                         _ -> return (Not fgate,mp))
+  -- No.
+  Nothing -> do
+    -- Looks like we actually have to do some work...
+    let (in1,pos1,in2,pos2) = getGate gate aiger
+    (f1,mp1) <- formulaForGate nxt assert aiger num_uses mp in1 pos1
+    (f2,mp2) <- formulaForGate nxt assert aiger num_uses mp1 in2 pos2
+    let rf = simplify $ if gpos
+                        then And f1 f2
+                        else Not $ And f1 f2
       -- Is the resulting formula very simple?
-      case rf of
+    case rf of
         Const x -> return (rf,Map.insert gate rf mp2)
         Atom v -> return (rf,Map.insert gate rf mp2)
         (Not (Atom v)) -> return (rf,Map.insert gate rf mp2)
         -- How many times is the output of the gate used?
-        _ -> case Map.lookup (litVar gate) num_uses of
+        _ -> case Map.lookup gate num_uses of
           -- Yay, only once, we don't have to introduce a new variable
           Just 1 -> do
             return (rf,Map.insert gate rf mp2)
@@ -53,40 +46,38 @@ formulaForGate nxt assert aiger num_uses mp gate = case Map.lookup gate mp of --
                       else Not (Atom (litVar rlit))
             return (res,Map.insert gate res mp2)
 
-stepSystem :: (Monad m,Literal gate,Ord gate) => m Var -> (Formula -> m ()) -> Aiger gate -> Map Var Int -> Map gate (PropL Var) -> m (Map gate (PropL Var),Map gate (PropL Var),Map gate (PropL Var))
+stepSystem :: (Monad m,AigerC aiger) => m Var -> (Formula -> m ()) -> aiger -> Map Var Int -> Map Var (PropL Var) -> m (Map Var (PropL Var),Map Var (PropL Var),Map Var (PropL Var))
 stepSystem nxt assert aiger num_uses mp = do
   ninps <- foldlM (\inp_map inp -> do
                       var <- nxt
-                      let res = if litIsP inp
-                                then Atom var
-                                else Not (Atom var)
+                      let res = Atom var
                       return (Map.insert inp res inp_map)
                   ) Map.empty (aigerInputs aiger)
-  (mp1,nlatches) <- foldlM (\(cmp,latch_map) (latch_to,latch_from) -> do
-                               (f_from,nmp) <- formulaForGate nxt assert aiger num_uses cmp latch_from
+  (mp1,nlatches) <- foldlM (\(cmp,latch_map) (latch_to,latch_pos,latch_from) -> do
+                               (f_from,nmp) <- formulaForGate nxt assert aiger num_uses cmp latch_from latch_pos
                                return (nmp,Map.insert latch_to f_from latch_map)
                            ) (Map.union mp ninps,Map.empty) (aigerLatches aiger)
   (mp2,noutp) <- foldlM (\(cmp,outp_map) outp -> do
-                            (f_outp,nmp) <- formulaForGate nxt assert aiger num_uses cmp outp
+                            (f_outp,nmp) <- formulaForGate nxt assert aiger num_uses cmp outp True
                             return (nmp,Map.insert outp f_outp outp_map)
                         ) (mp1,Map.empty) (aigerOutputs aiger)
   return (ninps,nlatches,noutp)
 
-initialValues :: Ord gate => Aiger gate -> Map gate (PropL Var)
-initialValues aiger = foldl (\cmp (latch,_) -> Map.insert latch (Const False) cmp) Map.empty (aigerLatches aiger)
+initialValues :: AigerC aiger => aiger -> Map Var (PropL Var)
+initialValues aiger = foldl (\cmp (latch,_,_) -> Map.insert latch (Const False) cmp) Map.empty (aigerLatches aiger)
 
-data Unrollment m gate = Unrollment { unrollmentNewVar :: m Var
-                                    , unrollmentAssert :: Formula -> m ()
-                                    , unrollmentCheck :: [(Var,Bool)] -> m Bool
-                                    , unrollmentGetModel :: m [Bool]
-                                    , unrollmentModel :: Aiger gate
-                                    , unrollmentUses :: Map Var Int
-                                    , unrollmentInputs :: [Map gate (PropL Var)]
-                                    , unrollmentLatches :: [Map gate (PropL Var)]
-                                    , unrollmentOutputs :: [Map gate (PropL Var)]
-                                    }
+data Unrollment m aiger = Unrollment { unrollmentNewVar :: m Var
+                                     , unrollmentAssert :: Formula -> m ()
+                                     , unrollmentCheck :: [(Var,Bool)] -> m Bool
+                                     , unrollmentGetModel :: m [Bool]
+                                     , unrollmentModel :: aiger
+                                     , unrollmentUses :: Map Var Int
+                                     , unrollmentInputs :: [Map Var (PropL Var)]
+                                     , unrollmentLatches :: [Map Var (PropL Var)]
+                                     , unrollmentOutputs :: [Map Var (PropL Var)]
+                                     }
 
-initialUnrollment :: (Literal gate,Ord gate) => m Var -> (Formula -> m ()) -> ([(Var,Bool)] -> m Bool) -> m [Bool] -> Aiger gate -> Unrollment m gate
+initialUnrollment :: AigerC aiger => m Var -> (Formula -> m ()) -> ([(Var,Bool)] -> m Bool) -> m [Bool] -> aiger -> Unrollment m aiger
 initialUnrollment nxt assert check model aiger
   = Unrollment { unrollmentNewVar = nxt
                , unrollmentAssert = assert
@@ -99,7 +90,7 @@ initialUnrollment nxt assert check model aiger
                , unrollmentOutputs = []
                }
 
-stepUnrollment :: (Monad m,Literal gate,Ord gate) => Unrollment m gate -> m (Unrollment m gate)
+stepUnrollment :: (Monad m,AigerC aiger) => Unrollment m aiger -> m (Unrollment m aiger)
 stepUnrollment unroll = do
   (ninp,nlatch,nout) <- stepSystem (unrollmentNewVar unroll) (unrollmentAssert unroll) (unrollmentModel unroll) (unrollmentUses unroll) (head $ unrollmentLatches unroll)
   return $ unroll { unrollmentInputs = ninp:(unrollmentInputs unroll)
@@ -114,7 +105,7 @@ getFormulaValue (Not f) mdl = not $ getFormulaValue f mdl
 getFormulaValue (And x y) mdl = (getFormulaValue x mdl) && (getFormulaValue y mdl)
 getFormulaValue (Or x y) mdl = (getFormulaValue x mdl) || (getFormulaValue y mdl)
 
-checkUnrollment :: (Monad m,Literal gate) => Unrollment m gate -> m (Maybe [Map Var Bool])
+checkUnrollment :: (Monad m,AigerC aiger) => Unrollment m aiger -> m (Maybe [Map Var Bool])
 checkUnrollment unroll = do
   let cond = simplify $ foldl1 Or [ f | outp <- unrollmentOutputs unroll, f <- Map.elems outp ]
   cond_cnf <- toCNF (unrollmentNewVar unroll) cond
@@ -123,9 +114,7 @@ checkUnrollment unroll = do
   if res
     then (do
              model <- unrollmentGetModel unroll
-             return $ Just [ Map.fromList [ (litVar gate,if litIsP gate
-                                                         then getFormulaValue f model
-                                                         else not $ getFormulaValue f model)
+             return $ Just [ Map.fromList [ (gate,getFormulaValue f model)
                                           | (gate,f) <- Map.toList inp_mp ]
                            | inp_mp <- unrollmentInputs unroll ])
     else return Nothing
