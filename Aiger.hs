@@ -29,8 +29,9 @@ instance AigerC OptimizedAiger where
   aigerLatches x = [ (Var (i+(optAigerInputs x)),(latch .&. 1) == 0,Var $ latch `div` 2) | (i,latch) <- UArray.assocs (optAigerLatches x) ]
   aigerOutputs x = [ Var v | v <- UArray.elems (optAigerOutputs x) ]
   aigerGates x = [ (Var g,Var $ g1 `div` 2,(g1 .&. 1)==0,Var $ g2 `div` 2,(g2 .&. 1)==0)
-                 | (g,(g1,g2)) <- Array.assocs (optAigerGates x) ]
-  getGate (Var gate) aiger = let (in1,in2) = (optAigerGates aiger) Array.! gate
+                 | ((g,g1),(_,g2)) <- zip (UArray.assocs (optAigerGatesLHS x)) (UArray.assocs (optAigerGatesRHS x)) ]
+  getGate (Var gate) aiger = let in1 = (optAigerGatesLHS aiger) UArray.! gate
+                                 in2 = (optAigerGatesRHS aiger) UArray.! gate
                              in (Var $ in1 `div` 2,(in1 .&. 1)==0,Var $ in2 `div` 2,(in2 .&. 1)==0)
 
 data Aiger lit = Aiger { aigerMaxVar :: lit
@@ -45,7 +46,8 @@ data Aiger lit = Aiger { aigerMaxVar :: lit
 data OptimizedAiger = OptimizedAiger { optAigerInputs :: Int
                                      , optAigerLatches :: UArray Int Int
                                      , optAigerOutputs :: UArray Int Int
-                                     , optAigerGates :: Array Int (Int,Int)
+                                     , optAigerGatesLHS :: UArray Int Int
+                                     , optAigerGatesRHS :: UArray Int Int
                                      , optAigerInputSymbols :: Map Int String
                                      , optAigerLatchSymbols :: Map Int String
                                      , optAigerOutputSymbols :: Map Int String
@@ -95,7 +97,8 @@ optimizeAiger :: Literal lit => Aiger lit -> OptimizedAiger
 optimizeAiger aiger = OptimizedAiger { optAigerInputs = n_inp
                                      , optAigerLatches = latches
                                      , optAigerOutputs = outps
-                                     , optAigerGates = gates
+                                     , optAigerGatesLHS = gatesL
+                                     , optAigerGatesRHS = gatesR
                                      , optAigerInputSymbols = syms_inp
                                      , optAigerLatchSymbols = syms_latch
                                      , optAigerOutputSymbols = syms_outp
@@ -121,7 +124,8 @@ optimizeAiger aiger = OptimizedAiger { optAigerInputs = n_inp
                                                                                                                                               then g2'*2
                                                                                                                                               else g2'*2+1)))
                                            ) (0,mp2) (aigerGates' aiger)
-    gates = Array.array (0,n_gates-1) gate_entrs
+    gatesL = UArray.array (0,n_gates-1) [ (i,l) | (i,(l,_)) <- gate_entrs ]
+    gatesR = UArray.array (0,n_gates-1) [ (i,r) | (i,(_,r)) <- gate_entrs ]
     mp_res = mp3
     (syms_inp,syms_latch,syms_outp) = foldl (\(cinp,clatch,coutp) (sym,n,name) -> case sym of
                                                 Input -> (Map.insert n name cinp,clatch,coutp)
