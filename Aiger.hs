@@ -8,6 +8,7 @@ import Data.Array as Array
 import Data.Array.Unboxed as UArray
 import Data.Traversable
 import Data.Bits
+import Data.Maybe (catMaybes)
 
 class AigerC a where
   aigerInputs :: a -> [Var]
@@ -15,14 +16,23 @@ class AigerC a where
   aigerOutputs :: a -> [Var]
   aigerGates :: a -> [(Var,Var,Bool,Var,Bool)]
   getGate :: Var -> a -> (Var,Bool,Var,Bool)
+  getLatch :: Var -> a -> (Var,Bool)
+  getSymbol :: Var -> a -> Symbol
 
 instance Literal lit => AigerC (Aiger lit) where
   aigerInputs x = fmap litVar (aigerInputs' x)
   aigerLatches x = [ (litVar l_from,litIsP l_to,litVar l_to) | (l_from,l_to) <- aigerLatches' x ]
   aigerOutputs x = fmap litVar (aigerOutputs' x)
   aigerGates x = [ (litVar g,litVar g1,litIsP g1,litVar g2,litIsP g2) | (g,g1,g2) <- aigerGates' x ]
+  getSymbol x aiger = if List.elem x (fmap litVar $ aigerInputs' aiger)
+                      then Input
+                      else (case List.find (\(latch,_) -> litVar latch==x) (aigerLatches' aiger) of
+                               Just _ -> Latch
+                               Nothing -> Gate)
   getGate gate aiger = case List.find (\(gt,_,_) -> litVar gt == gate) (aigerGates' aiger) of
     Just (_,in1,in2) -> (litVar in1,litIsP in1,litVar in2,litIsP in2)
+  getLatch latch aiger = case List.find (\(latch',_) -> litVar latch' == latch) (aigerLatches' aiger) of
+    Just (_,latch_from) -> (litVar latch_from,litIsP latch_from)
 
 instance AigerC OptimizedAiger where
   aigerInputs x = [Var i | i <- [0..(optAigerInputs x)-1]]
@@ -30,9 +40,18 @@ instance AigerC OptimizedAiger where
   aigerOutputs x = [ Var v | v <- UArray.elems (optAigerOutputs x) ]
   aigerGates x = [ (Var g,Var $ g1 `div` 2,(g1 .&. 1)==0,Var $ g2 `div` 2,(g2 .&. 1)==0)
                  | ((g,g1),(_,g2)) <- zip (UArray.assocs (optAigerGatesLHS x)) (UArray.assocs (optAigerGatesRHS x)) ]
-  getGate (Var gate) aiger = let in1 = (optAigerGatesLHS aiger) UArray.! gate
-                                 in2 = (optAigerGatesRHS aiger) UArray.! gate
+  getSymbol (Var gate) aiger = if gate < optAigerInputs aiger
+                               then Input
+                               else (if gate < (optAigerInputs aiger) + (snd $ UArray.bounds $ optAigerLatches aiger) + 1
+                                     then Latch
+                                     else Gate)
+  getGate (Var gate) aiger = let idx = gate-(optAigerInputs aiger)-(snd $ UArray.bounds $ optAigerLatches aiger)-1
+                                 in1 = (optAigerGatesLHS aiger) UArray.! idx
+                                 in2 = (optAigerGatesRHS aiger) UArray.! idx
                              in (Var $ in1 `div` 2,(in1 .&. 1)==0,Var $ in2 `div` 2,(in2 .&. 1)==0)
+  getLatch (Var latch) aiger = let idx = latch-(optAigerInputs aiger)
+                                   latch_from = (optAigerLatches aiger) UArray.! idx
+                               in (Var $ latch_from `div` 2,(latch_from .&. 1)==0)
 
 data Aiger lit = Aiger { aigerMaxVar :: lit
                        , aigerInputs' :: [lit]
@@ -56,6 +75,7 @@ data OptimizedAiger = OptimizedAiger { optAigerInputs :: Int
 data Symbol = Input
             | Latch
             | Output
+            | Gate
             | Unknown
             deriving (Show,Eq,Ord)
 
@@ -111,10 +131,11 @@ optimizeAiger aiger = OptimizedAiger { optAigerInputs = n_inp
                                                                                                                                                   else entr*2+1))
                                             ) (0,mp1) (aigerLatches' aiger)
     latches = UArray.array (0,n_latch-1) latch_entrs
-    (n_outp,outp_entrs) = mapAccumL (\i outp -> (i+1,(i,case Map.lookup (litVar outp) mp_res of
-                                                         Just entr -> entr))
+    (n_outp,outp_entrs) = mapAccumL (\i outp -> case Map.lookup (litVar outp) mp_res of
+                                        Just entr -> (i+1,Just (i,entr))
+                                        Nothing -> (i,Nothing)
                                     ) 0 (aigerOutputs' aiger)
-    outps = UArray.array (0,n_outp-1) outp_entrs
+    outps = UArray.array (0,n_outp-1) (catMaybes outp_entrs)
     ((n_gates,mp3),gate_entrs) = mapAccumL (\(i,cmp) (gate,g1,g2) -> ((i+1,Map.insert (litVar gate) (i+n_inp+n_latch) cmp),(i,case Map.lookup (litVar g1) mp_res of
                                                                                                                                Just g1' -> case Map.lookup (litVar g2) mp_res of
                                                                                                                                  Just g2' -> (if litIsP g1
