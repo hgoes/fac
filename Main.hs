@@ -53,6 +53,8 @@ main = do
   [file,limit] <- getArgs
   aiger_str <- readFile file
   let aiger = optimizeAiger (readAiger aiger_str :: Aiger Lit)
+      unrollment = buildUnrolling aiger (countUses aiger)
+  print unrollment
   solver <- solverNew
   let init = initialUnrollment
              (solverNewVar solver)
