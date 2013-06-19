@@ -1,12 +1,13 @@
 module Formula where
 
+import Literal
+
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import qualified Data.List as List (intersperse)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Monoid
-import Literal
 
 newtype Clause = Clause { clauseSet :: IntSet }
   deriving (Eq, Ord, Monoid)
@@ -151,7 +152,11 @@ toClause nxt f = do
   return (Clause $ IntSet.singleton $ litId lit,f')
 
 tseitin :: Monad m => m Var -> PropL Var -> m (Formula,Lit)
+tseitin nxt (Const x) = do
+  v <- nxt
+  return (formulaLiteral (lit v x),lp v)
 tseitin nxt (Atom x) = return (formulaEmpty,lp x)
+tseitin nxt (Not (Atom x)) = return (formulaEmpty,ln x)
 tseitin nxt (Not (And (Not x) (Not y))) = tseitin nxt (Or x y)
 tseitin nxt (Not x) = do
   (f1,lit) <- tseitin nxt x
