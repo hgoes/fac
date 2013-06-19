@@ -30,7 +30,7 @@ class Literal l where
   litNeg :: l -> l
 
 instance Literal Lit where
-  lit (Var var) sgn = Lit ((var+var)+(if sgn then 1 else 0))
+  lit (Var var) pos = Lit ((var+var)+(if pos then 0 else 1))
   lp (Var var) = Lit (var+var)
   ln (Var var) = Lit (var+var+1)
   litVar (Lit x) = Var (x `shiftR` 1)
