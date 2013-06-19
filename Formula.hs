@@ -8,6 +8,9 @@ import qualified Data.List as List (intersperse)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Monoid
+import Data.Traversable
+import Data.Foldable
+import Prelude hiding (foldr)
 
 newtype Clause = Clause { clauseSet :: IntSet }
   deriving (Eq, Ord, Monoid)
@@ -88,12 +91,19 @@ formulaFromList :: [[Lit]] -> Formula
 formulaFromList = Formula . Set.fromList . fmap (Clause . IntSet.fromList . fmap litId)
 
 data PropL var
-  = Const Bool
-  | Atom var
-  | Not (PropL var)
-  | And (PropL var) (PropL var)
-  | Or (PropL var) (PropL var)
-  deriving (Eq,Functor,Show)
+  = Const !Bool
+  | Atom !var
+  | Not !(PropL var)
+  | And !(PropL var) !(PropL var)
+  | Or !(PropL var) !(PropL var)
+  deriving (Eq,Functor,Show,Traversable,Foldable)
+
+flattenFormula :: PropL (PropL a) -> PropL a
+flattenFormula (Const x) = Const x
+flattenFormula (Atom x) = x
+flattenFormula (Not f) = Not $ flattenFormula f
+flattenFormula (And x y) = And (flattenFormula x) (flattenFormula y)
+flattenFormula (Or x y) = Or (flattenFormula x) (flattenFormula y)
 
 simplify :: Eq var => PropL var -> PropL var
 simplify (Not f) = case simplify f of
