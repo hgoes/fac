@@ -159,8 +159,10 @@ tseitin nxt (Atom x) = return (formulaEmpty,lp x)
 tseitin nxt (Not (Atom x)) = return (formulaEmpty,ln x)
 tseitin nxt (Not (And (Not x) (Not y))) = tseitin nxt (Or x y)
 tseitin nxt (Not x) = do
-  (f1,lit) <- tseitin nxt x
-  return (f1,litNeg lit)
+  (Formula cnf_x,lit) <- tseitin nxt x
+  vout <- nxt
+  let Formula cnf_r = formulaNot (lp vout) lit
+  return (Formula $ Set.union cnf_x cnf_r,lp vout)
 tseitin nxt (And x y) = do
   (Formula cnf_x,l1) <- tseitin nxt x
   (Formula cnf_y,l2) <- tseitin nxt y
