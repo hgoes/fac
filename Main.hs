@@ -3,7 +3,7 @@ module Main where
 import Minisat
 import Data.IORef
 import Data.Map as Map hiding (foldl)
-import Prelude hiding (foldl,mapM_)
+import Prelude hiding (foldl,mapM_,foldl1)
 import Foreign.C
 import Formula
 import Aiger
@@ -13,6 +13,9 @@ import Simulator
 import qualified Data.IntSet as IntSet
 import System.Environment
 import Data.Foldable
+import Data.Proxy
+import Data.Array.IO
+import Data.Array (Array)
 
 data ProofNode = ProofRoot Clause
                | ProofChain [ProofNode] [Var]
@@ -52,20 +55,27 @@ proofVerify (ProofChain cls vars)
 main = do
   [file,limit] <- getArgs
   aiger_str <- readFile file
-  let aiger = optimizeAiger (readAiger aiger_str :: Aiger Lit)
-      unrollment = buildUnrolling aiger (countUses aiger)
-  print unrollment
+  let aiger = readAiger aiger_str :: Aiger Lit
+      aiger_opt = optimizeAiger aiger
+      unrollment = buildUnrolling aiger_opt (countUses aiger_opt)
   solver <- solverNew
-  let init = initialUnrollment
-             (solverNewVar solver)
-             (\(Formula f) -> mapM_ (\cl -> solverAddClause solver (clauseLits cl)) f)
-             (\vars -> solverSolveWith solver [ lit var sgn | (var,sgn) <- vars ])
-             (solverGetModel solver)
-             aiger
-  last <- foldlM (\cur _ -> stepUnrollment cur) init [1..(read limit)]
-  res <- checkUnrollment last
-  case res of
-    Nothing -> putStrLn "No errors found."
-    Just cex -> do
-      putStrLn $ "Counterexample: "++show cex
-      print $ simulateAiger aiger cex
+  let nxt = solverNewVar solver
+      assert (Formula f) = {-putStrLn ("Asserting "++show f) >>-} mapM_ (\cl -> solverAddClause solver (clauseLits cl)) f
+  (assertion,_) <- foldlM (\(cf,clatch) i -> do
+                              (arr::Array Int Int) <- performUnrolling (Proxy :: Proxy IOArray) 
+                                                      nxt
+                                                      assert
+                                                      unrollment
+                                                      clatch
+                              let fs = foldl (\f outp -> Or f (unrollingGetValue outp arr)) (Const False) (unrollOutputs unrollment)
+                                  nlatch = fmap (\(latch_f) -> unrollingGetValue latch_f arr
+                                                ) (unrollLatchesOut unrollment)
+                              return (Or cf fs,nlatch)
+                          ) (Const False,fmap (const $ Const False) (unrollLatches unrollment)) [1..(read limit)]
+  let simpl_assertion = simplify assertion
+  cnf_assertion <- toCNF nxt simpl_assertion
+  assert cnf_assertion
+  res <- solverSolve solver
+  if res
+    then putStrLn "Error found."
+    else putStrLn "No errors found."
