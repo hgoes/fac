@@ -10,6 +10,7 @@ import Data.Map.Strict as Map hiding (foldl,(!))
 import Prelude hiding (foldl,foldl1,mapM,sequence)
 import Data.Traversable
 import Data.Array.MArray.Safe
+import Data.Array.IO (IOArray)
 import Data.Array.Unboxed
 import Data.Array.Unsafe
 import Data.Proxy
@@ -118,3 +119,43 @@ getFormulaValue (Atom v) mdl = List.genericIndex mdl v
 getFormulaValue (Not f) mdl = not $ getFormulaValue f mdl
 getFormulaValue (And x y) mdl = (getFormulaValue x mdl) && (getFormulaValue y mdl)
 getFormulaValue (Or x y) mdl = (getFormulaValue x mdl) || (getFormulaValue y mdl)
+
+runUnrolling :: IO Var -> (Formula -> IO ()) -> IO Bool -> IO [Bool] -> Unrolling -> Int -> IO (Maybe [Map Var Bool])
+runUnrolling nxt assert chk model unroll n = do
+  res <- runUnrolling' nxt assert chk model unroll (Const False) (fmap (const (Const False)) (unrollLatches unroll)) n
+  case res of
+    Nothing -> return Nothing
+    Just (tr,_) -> return (Just tr)
+
+runUnrolling' :: IO Var -> (Formula -> IO ()) -> IO Bool -> IO [Bool] -> Unrolling -> PropL Var -> Map Var (PropL Var) -> Int -> IO (Maybe ([Map Var Bool],[Bool]))
+runUnrolling' nxt assert chk model unroll formula latches 0 = do
+  let simpl_assertion = simplify formula
+  cnf_assertion <- toCNF nxt simpl_assertion
+  assert cnf_assertion
+  res <- chk
+  if res
+    then (do
+             mdl <- model
+             return (Just ([],mdl)))
+    else return Nothing
+runUnrolling' nxt assert chk model unroll formula latches n = do
+  (inp,nformula,nlatch) <- stepUnrolling nxt assert unroll formula latches
+  res <- runUnrolling' nxt assert chk model unroll nformula nlatch (n-1)
+  case res of
+    Nothing -> return Nothing
+    Just (tr,mdl) -> let tr_el = fmap (\el -> getFormulaValue el mdl) inp
+                     in return (Just (tr_el:tr,mdl))
+
+stepUnrolling :: IO Var -> (Formula -> IO ()) -> Unrolling -> PropL Var -> Map Var (PropL Var) -> IO (Map Var (PropL Var),PropL Var,Map Var (PropL Var))
+stepUnrolling nxt assert unroll formula latches = do
+  (arr::Array Int Int) <- performUnrolling (Proxy :: Proxy IOArray)
+                          nxt
+                          assert
+                          unroll
+                          latches
+  let fs = foldl (\f outp -> Or f (unrollingGetValue outp arr)
+                 ) formula (unrollOutputs unroll)
+      nlatch = fmap (\(latch_f) -> unrollingGetValue latch_f arr
+                    ) (unrollLatchesOut unroll)
+      inps = fmap (\idx -> unrollingGetValue (Atom idx) arr) (unrollInputs unroll)
+  return (inps,fs,nlatch)

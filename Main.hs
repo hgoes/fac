@@ -52,6 +52,16 @@ proofVerify (ProofChain cls vars)
                                  cset
                    ) (IntSet.unions $ fmap (\(Clause cl) -> cl) (fmap proofVerify cls)) vars
 
+prettyTrace :: (Var -> Maybe String) -> [Map Var Bool] -> [String]
+prettyTrace mp steps = prettyTrace' steps 1
+  where
+    prettyTrace' [] _ = []
+    prettyTrace' (step:steps) n = ("Step "++show n):
+                                  [ "|- "++(case mp var of
+                                               Nothing -> show var
+                                               Just sym -> sym)++" = "++show val
+                                  | (var,val) <- Map.toList step ]++(prettyTrace' steps (n+1))
+
 main = do
   [file,limit] <- getArgs
   aiger_str <- readFile file
@@ -60,22 +70,12 @@ main = do
       unrollment = buildUnrolling aiger_opt (countUses aiger_opt)
   solver <- solverNew
   let nxt = solverNewVar solver
-      assert (Formula f) = {-putStrLn ("Asserting "++show f) >>-} mapM_ (\cl -> solverAddClause solver (clauseLits cl)) f
-  (assertion,_) <- foldlM (\(cf,clatch) i -> do
-                              (arr::Array Int Int) <- performUnrolling (Proxy :: Proxy IOArray) 
-                                                      nxt
-                                                      assert
-                                                      unrollment
-                                                      clatch
-                              let fs = foldl (\f outp -> Or f (unrollingGetValue outp arr)) (Const False) (unrollOutputs unrollment)
-                                  nlatch = fmap (\(latch_f) -> unrollingGetValue latch_f arr
-                                                ) (unrollLatchesOut unrollment)
-                              return (Or cf fs,nlatch)
-                          ) (Const False,fmap (const $ Const False) (unrollLatches unrollment)) [1..(read limit)]
-  let simpl_assertion = simplify assertion
-  cnf_assertion <- toCNF nxt simpl_assertion
-  assert cnf_assertion
-  res <- solverSolve solver
-  if res
-    then putStrLn "Error found."
-    else putStrLn "No errors found."
+      assert (Formula f) = mapM_ (\cl -> solverAddClause solver (clauseLits cl)) f
+      chk = solverSolve solver
+      model = solverGetModel solver
+  res <- runUnrolling nxt assert chk model unrollment (read limit)
+  case res of
+    Nothing -> putStrLn "No errors."
+    Just tr -> do
+      putStrLn "Error found:"
+      putStr (unlines $ prettyTrace (\v -> getSymbolName v aiger_opt) tr)
