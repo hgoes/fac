@@ -24,7 +24,7 @@ solverAddClause :: Solver -> [Lit] -> IO ()
 solverAddClause s cl = do
   let sz = length cl
   arr <- mallocArray sz
-  pokeArray arr cl
+  pokeArray arr (fmap (fromIntegral . litId) cl)
   solverAddClause_ s arr (fromIntegral sz)
 
 solverGetModel :: Solver -> IO [Bool]
@@ -55,7 +55,7 @@ solverSolveWith :: Solver -> [Lit] -> IO Bool
 solverSolveWith solver cl = do
   let sz = length cl
   arr <- mallocArray sz
-  pokeArray arr cl
+  pokeArray arr (fmap (fromIntegral . litId) cl)
   solverSolveWith_ solver arr (fromIntegral sz)
 
 foreign import capi "CInterface.h solver_new"
@@ -85,7 +85,7 @@ foreign import capi "CInterface.h solver_new_var"
   solverNewVar :: Solver -> IO Var
 
 foreign import capi "CInterface.h solver_add_clause"
-  solverAddClause_ :: Solver -> Ptr Lit -> CInt -> IO ()
+  solverAddClause_ :: Solver -> Ptr CInt -> CInt -> IO ()
 
 foreign import capi "CInterface.h solver_ok"
   solverOk :: Solver -> IO Bool
@@ -94,7 +94,7 @@ foreign import capi "CInterface.h solver_solve"
   solverSolve :: Solver -> IO Bool
 
 foreign import capi "CInterface.h solver_solve_with"
-  solverSolveWith_ :: Solver -> Ptr Lit -> CInt -> IO Bool
+  solverSolveWith_ :: Solver -> Ptr CInt -> CInt -> IO Bool
 
 foreign import capi "CInterface.h solver_get_model"
   solverGetModel' :: Solver -> Ptr (Ptr CInt) -> IO CInt
