@@ -18,6 +18,7 @@ class AigerC a where
   getGate :: Var -> a -> (Var,Bool,Var,Bool)
   getLatch :: Var -> a -> (Var,Bool)
   getSymbol :: Var -> a -> Symbol
+  getSymbolName :: Var -> a -> Maybe String
 
 instance Literal lit => AigerC (Aiger lit) where
   aigerInputs x = fmap litVar (aigerInputs' x)
@@ -33,6 +34,20 @@ instance Literal lit => AigerC (Aiger lit) where
     Just (_,in1,in2) -> (litVar in1,litIsP in1,litVar in2,litIsP in2)
   getLatch latch aiger = case List.find (\(latch',_) -> litVar latch' == latch) (aigerLatches' aiger) of
     Just (_,latch_from) -> (litVar latch_from,litIsP latch_from)
+  getSymbolName gate aiger = case List.findIndex (\inp -> litVar inp == gate) (aigerInputs' aiger) of
+    Just i -> case List.find (\(sym,n,_) -> sym==Input && n==i) (aigerSymbols aiger) of
+      Just (_,_,name) -> Just name
+      Nothing -> Nothing
+    Nothing -> case List.findIndex (\(latch,_) -> litVar latch==gate) (aigerLatches' aiger) of
+      Just i -> case List.find (\(sym,n,_) -> sym==Latch && n==i) (aigerSymbols aiger) of
+        Just (_,_,name) -> Just name
+        Nothing -> Nothing
+      Nothing -> case List.findIndex (\outp -> litVar outp==gate) (aigerOutputs' aiger) of
+        Just i -> case List.find (\(sym,n,_) -> sym==Output && n==i) (aigerSymbols aiger) of
+          Just (_,_,name) -> Just name
+          Nothing -> Nothing
+        Nothing -> Nothing
+
 
 instance AigerC OptimizedAiger where
   aigerInputs x = [Var i | i <- [0..(optAigerInputs x)-1]]
@@ -52,6 +67,11 @@ instance AigerC OptimizedAiger where
   getLatch (Var latch) aiger = let idx = latch-(optAigerInputs aiger)
                                    latch_from = (optAigerLatches aiger) UArray.! idx
                                in (Var $ latch_from `div` 2,(latch_from .&. 1)==0)
+  getSymbolName (Var gate) aiger = if gate < optAigerInputs aiger
+                                   then Map.lookup gate (optAigerInputSymbols aiger)
+                                   else (if gate < (optAigerInputs aiger) + (snd $ UArray.bounds $ optAigerLatches aiger) + 1
+                                         then Map.lookup (gate-(optAigerInputs aiger)) (optAigerLatchSymbols aiger)
+                                         else Map.lookup (gate-(optAigerInputs aiger)-(snd $ UArray.bounds $ optAigerLatches aiger)-1) (optAigerOutputSymbols aiger))
 
 data Aiger lit = Aiger { aigerMaxVar :: lit
                        , aigerInputs' :: [lit]
