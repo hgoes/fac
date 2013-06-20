@@ -38,4 +38,4 @@ stepAiger aiger latch inp
                      res = if pos
                            then v1 && v2
                            else not (v1 && v2)
-                 in (res,Map.insert gate res mp2)
+                 in (res,Map.insert gate (v1 && v2) mp2)

@@ -79,3 +79,4 @@ main = do
     Just tr -> do
       putStrLn "Error found:"
       putStr (unlines $ prettyTrace (\v -> getSymbolName v aiger_opt) tr)
+      print $ simulateAiger aiger_opt tr
