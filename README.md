@@ -27,7 +27,7 @@ Right now, fac supports only bounded model checking of aiger files. This functio
 fac <FILE>.aag <N>
 ```
 
-where <FILE>.aag is a aiger file in text-format and <N> is the unrollment bound.
+where **FILE** is a aiger file in text-format and **N** is the unrollment bound.
 
 Issues
 ------
