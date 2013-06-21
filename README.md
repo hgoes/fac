@@ -19,6 +19,16 @@ runghc Setup.hs build
 runghc Setup.hs install
 ```
 
+Running
+-------
+Right now, fac supports only bounded model checking of aiger files. This functionality is invoked by executing:
+
+```
+fac <FILE>.aag <N>
+```
+
+where <FILE>.aag is a aiger file in text-format and <N> is the unrollment bound.
+
 Issues
 ------
 - Right now, the program doesn't work with gcc-4.5, as explained in issue #1.
