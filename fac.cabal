@@ -35,6 +35,8 @@ Executable fac
     Formula
     Aiger
     Literal
+    Simulator
+    Unrolling
   Include-Dirs: minisat
   Includes:
     CInterface.h
