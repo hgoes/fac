@@ -37,6 +37,7 @@ Executable fac
     Literal
     Simulator
     Unrolling
+    Interpolation
   Include-Dirs: minisat
   Includes:
     CInterface.h
