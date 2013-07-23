@@ -98,6 +98,13 @@ data PropL var
   | Or !(PropL var) !(PropL var)
   deriving (Eq,Functor,Show,Traversable,Foldable)
 
+allVars :: Ord var => PropL var -> Set var
+allVars (Const _) = Set.empty
+allVars (Atom v) = Set.singleton v
+allVars (Not x) = allVars x
+allVars (And x y) = Set.union (allVars x) (allVars y)
+allVars (Or x y) = Set.union (allVars x) (allVars y)
+
 flattenFormula :: PropL (PropL a) -> PropL a
 flattenFormula (Const x) = Const x
 flattenFormula (Atom x) = x

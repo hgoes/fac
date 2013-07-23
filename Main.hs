@@ -1,56 +1,24 @@
 module Main where
 
 import Minisat
-import Data.IORef
 import Data.Map as Map hiding (foldl)
 import Prelude hiding (foldl,mapM_,foldl1)
+import qualified Data.Set as Set
 import Foreign.C
 import Formula
 import Aiger
 import Literal
 import Unrolling
 import Simulator
+import ProofBuilder
+import Interpolation
 import qualified Data.IntSet as IntSet
 import System.Environment
 import Data.Foldable
 import Data.Proxy
 import Data.Array.IO
 import Data.Array (Array)
-
-data ProofNode = ProofRoot Clause
-               | ProofChain [ProofNode] [Var]
-               deriving Show
-
-data ProofBuilder = ProofBuilder { proofNodes :: Map CInt ProofNode
-                                 , nextNode :: CInt }
-
-proofBuilder :: ProofBuilder
-proofBuilder = ProofBuilder Map.empty 0
-
-proofBuilderRoot :: [Lit] -> ProofBuilder -> ProofBuilder
-proofBuilderRoot lits builder = builder { proofNodes = Map.insert (nextNode builder) (ProofRoot $ Clause $ IntSet.fromList $ fmap litId lits) (proofNodes builder)
-                                        , nextNode = succ (nextNode builder)
-                                        }
-
-proofBuilderChain :: [CInt] -> [Var] -> ProofBuilder -> ProofBuilder
-proofBuilderChain cls vars builder = let cls' = fmap ((proofNodes builder)!) cls
-                                     in builder { proofNodes = Map.insert (nextNode builder) (ProofChain cls' vars) (proofNodes builder)
-                                                , nextNode = succ (nextNode builder)
-                                                }
-
-proofBuilderDelete :: CInt -> ProofBuilder -> ProofBuilder
-proofBuilderDelete cl builder = builder { proofNodes = Map.delete cl (proofNodes builder) }
-
-proofBuilderGet :: ProofBuilder -> ProofNode
-proofBuilderGet builder = (proofNodes builder)!(pred $ nextNode builder)
-
-proofVerify :: ProofNode -> Clause
-proofVerify (ProofRoot cl) = cl
-proofVerify (ProofChain cls vars)
-  = Clause $ foldl (\cset var -> IntSet.delete (litId $ lp var) $
-                                 IntSet.delete (litId $ ln var) $
-                                 cset
-                   ) (IntSet.unions $ fmap (\(Clause cl) -> cl) (fmap proofVerify cls)) vars
+import Data.IORef
 
 prettyTrace :: (Var -> Maybe String) -> [Map Var Bool] -> [String]
 prettyTrace mp steps = prettyTrace' steps 1
@@ -69,14 +37,29 @@ main = do
       aiger_opt = optimizeAiger aiger
       unrollment = buildUnrolling aiger_opt (countUses aiger_opt)
   solver <- solverNew
+  builder <- newIORef (proofBuilder True)
+  solverAddProofLog solver
+    (\lits -> modifyIORef builder (proofBuilderRoot lits))
+    (\nds vars -> modifyIORef builder (proofBuilderChain nds vars))
+    (\nd -> modifyIORef builder (proofBuilderDelete nd))
+    (return ())
   let nxt = solverNewVar solver
       assert (Formula f) = mapM_ (\cl -> solverAddClause solver (clauseLits cl)) f
       chk = solverSolve solver
       model = solverGetModel solver
-  res <- runUnrolling nxt assert chk model unrollment (read limit)
+  (inp0,formula0,latch0) <- stepUnrolling nxt assert unrollment (Const False) (fmap (const (Const False)) (unrollLatches unrollment))
+  let latch_vars0 = Set.unions $ fmap allVars (Map.elems latch0)
+  modifyIORef builder (proofBuilderSetState False)
+  res <- runUnrolling' nxt assert chk model unrollment formula0 latch0 ((read limit)-1)
+  --res <- runUnrolling nxt assert chk model unrollment (read limit)
   case res of
-    Nothing -> putStrLn "No errors."
-    Just tr -> do
+    Nothing -> do
+      putStrLn "No errors."
+      proof <- readIORef builder
+      putStr $ unlines $ renderProof (proofBuilderGet proof)
+      print $ simplify $ interpolateProof HKP (flip Set.member latch_vars0) proof
+      print latch_vars0
+    Just (tr,_) -> do
       putStrLn "Error found:"
       putStr (unlines $ prettyTrace (\v -> getSymbolName v aiger_opt) tr)
       print $ simulateAiger aiger_opt tr

@@ -38,6 +38,7 @@ Executable fac
     Simulator
     Unrolling
     Interpolation
+    ProofBuilder
   Include-Dirs: minisat
   Includes:
     CInterface.h
