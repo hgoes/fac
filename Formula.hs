@@ -112,6 +112,11 @@ flattenFormula (Not f) = Not $ flattenFormula f
 flattenFormula (And x y) = And (flattenFormula x) (flattenFormula y)
 flattenFormula (Or x y) = Or (flattenFormula x) (flattenFormula y)
 
+isNegationOf :: Eq var => PropL var -> PropL var -> Bool
+isNegationOf (Not x) y = x==y
+isNegationOf x (Not y) = x==y
+isNegationOf _ _ = False
+
 simplify :: Eq var => PropL var -> PropL var
 simplify (Not f) = case simplify f of
   Not f' -> f'
@@ -126,7 +131,9 @@ simplify (And x y) = case (simplify x,simplify y) of
   (_,Const False) -> Const False
   (x',y') -> if x'==y'
              then x'
-             else And x' y'
+             else (if isNegationOf x' y'
+                   then Const False
+                   else And x' y')
 simplify (Or x y) = case (simplify x,simplify y) of
   (Const True,_) -> Const True
   (Const False,y') -> y'
