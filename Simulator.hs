@@ -7,7 +7,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Traversable
 
-simulateAiger :: AigerC aiger => aiger -> [Map Var Bool] -> [Map Var Bool]
+simulateAiger :: AigerC aiger => aiger -> [Map Var Bool] -> [[Bool]]
 simulateAiger aiger = snd . mapAccumL (stepAiger aiger) (Map.fromList [ (latch_to,False) | (latch_to,_,_) <- aigerLatches aiger ])
 
 -- | Run one step in the aiger model.
@@ -16,14 +16,12 @@ stepAiger :: AigerC aiger
              => aiger
              -> Map Var Bool -- ^ Latches
              -> Map Var Bool -- ^ Inputs
-             -> (Map Var Bool,Map Var Bool)
+             -> (Map Var Bool,[Bool])
 stepAiger aiger latch inp
   = (nlatch,outps)
   where
-    (outps,mp1) = foldl (\(cout,cmp) outp
-                         -> let (v,nmp) = getGateVal cmp outp True
-                            in (Map.insert outp v cout,nmp)
-                        ) (Map.empty,Map.union inp latch) (aigerOutputs aiger)
+    (mp1,outps) = mapAccumL (\cmp outp -> let (v,nmp) = getGateVal cmp (litVar outp) (litIsP outp)
+                                          in (nmp,v)) (Map.union inp latch) (aigerOutputs aiger)
     (nlatch,mp2) = foldl (\(clatch,cmp) (latch_to,latch_pos,latch_from)
                           -> let (v,nmp) = getGateVal cmp latch_from latch_pos
                              in (Map.insert latch_to v clatch,nmp)

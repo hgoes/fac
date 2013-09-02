@@ -10,58 +10,61 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Foreign.C
 
+import Debug.Trace
+
 data VarLabel = Red | Blue | RedBlue deriving (Eq,Ord,Show)
 
-type LabeledClause a = [(VarLabel,a)]
+type LabeledClause = Map Var (Bool,VarLabel)
 
-getColorAndDelete :: (a -> Bool) -> LabeledClause a -> (LabeledClause a,VarLabel)
-getColorAndDelete f [] = error "Error while interpolating: Eliminated variable not in clause"
-getColorAndDelete f ((lbl,v):cls)
-  | f v = (cls,lbl)
-  | otherwise = let (rest,res) = getColorAndDelete f cls
-                in ((lbl,v):rest,res)
+getColorAndDelete :: Var -> LabeledClause -> (LabeledClause,VarLabel)
+getColorAndDelete v cl = let (Just (_,col),ncl) = Map.updateLookupWithKey (\_ _ -> Nothing) v cl
+                         in (ncl,col)
 
-initialBInterpolant :: Literal a => LabeledClause a -> PropL Var
-initialBInterpolant cl = case filter (\(lbl,_) -> lbl==Blue) cl of
-  [] -> Const True
-  xs -> Not $ foldl1 Or $ fmap (\(_,x) -> if litIsP x
-                                          then Atom (litVar x)
-                                          else Not (Atom (litVar x))
-                               ) xs
+initialBInterpolant :: LabeledClause -> PropL Var
+initialBInterpolant cl = let blue_cl = Map.filter (\(_,col) -> col==Blue) cl
+                         in if Map.null blue_cl
+                            then Const True
+                            else Not $ foldl1 Or [ if pos then Atom v else Not (Atom v) | (v,(pos,_)) <- Map.toList blue_cl ]
 
-initialAInterpolant :: Literal a => LabeledClause a -> PropL Var
-initialAInterpolant cl = case filter (\(lbl,_) -> lbl==Red) cl of
-  [] -> Const False
-  xs -> foldl1 Or $ fmap (\(_,x) -> if litIsP x
-                                    then Atom (litVar x)
-                                    else Not (Atom (litVar x))
-                         ) xs
+initialAInterpolant :: LabeledClause -> PropL Var
+initialAInterpolant cl = let red_cl = Map.filter (\(_,col) -> col==Red) cl
+                         in if Map.null red_cl
+                            then Const False
+                            else foldl1 Or [ if pos then Atom v else Not (Atom v) | (v,(pos,_)) <- Map.toList red_cl ]
 
-interpolate :: Literal a
-               => LabeledClause a -- ^ The left hand clause
-               -> PropL Var -- ^ The left hand interpolant
-               -> LabeledClause a -- ^ The right hand clause
-               -> PropL Var -- ^ The right hand interpolant
-               -> Var -- ^ The variable eliminated
-               -> (LabeledClause a,PropL Var)
+mergeClause :: LabeledClause -> LabeledClause -> LabeledClause
+mergeClause = Map.unionWith (\(pos1,col1) (pos2,col2) -> if pos1==pos2
+                                                         then (if col1==col2
+                                                               then (pos1,col1)
+                                                               else (pos1,RedBlue))
+                                                         else error "Incompatible clauses")
+
+interpolate :: LabeledClause -- ^ The left hand clause
+            -> PropL Var -- ^ The left hand interpolant
+            -> LabeledClause -- ^ The right hand clause
+            -> PropL Var -- ^ The right hand interpolant
+            -> Var -- ^ The variable eliminated
+            -> (LabeledClause,PropL Var)
 interpolate lcl lint rcl rint var
-  = let (nlcl,lcolor) = getColorAndDelete (\v -> litVar v == var) lcl
-        (nrcl,rcolor) = getColorAndDelete (\v -> litVar v == var) rcl
-    in (nlcl++nrcl,case (lcolor,rcolor) of
-           (Blue,Blue) -> Or lint rint
-           (Red,Red) -> And lint rint
-           _ -> And (Or (Atom var) lint) (Or (Not (Atom var)) rint))
+  = let (nlcl,lcolor) = getColorAndDelete var lcl
+        (nrcl,rcolor) = getColorAndDelete var rcl
+        res_int = case (lcolor,rcolor) of
+          (Blue,Blue) -> Or lint rint
+          (Red,Red) -> And lint rint
+          _ -> And (Or (Atom var) lint) (Or (Not (Atom var)) rint)
+        res_cl = mergeClause nlcl nrcl
+    in {-trace ("Interpolating: "++show lcl++show [simplify lint]++" and "++show rcl++show [simplify rint]++" with var "++show var++" => "++show res_cl++show [simplify res_int])-} (res_cl,res_int)
 
 class InterpolationSystem a where
   labelPartition :: a
                  -> Bool -- ^ Is the clause from the A partition?
                  -> (Var -> Bool) -- ^ Function to check if a variable is shared
                  -> [Lit] -- ^ The clause
-                 -> LabeledClause Lit
+                 -> LabeledClause
 
 data InterpolationState a = InterpolationState { interpolationSystem :: a
                                                , sharedVars :: Var -> Bool
-                                               , interpolationNodes :: Map CInt (LabeledClause Lit,PropL Var)
+                                               , interpolationNodes :: Map CInt (LabeledClause,PropL Var)
                                                , nextInterpolationNode :: CInt
                                                , isAPartition :: Bool
                                                }
@@ -73,6 +76,7 @@ newInterpolationState isys isShared = InterpolationState { interpolationSystem =
                                                          , nextInterpolationNode = 0
                                                          , isAPartition = True
                                                          }
+
 setAPartition :: InterpolationState a -> InterpolationState a
 setAPartition interp = interp { isAPartition = True }
 
@@ -98,15 +102,18 @@ interpolationChain [nd1,nd2] [v] interp = let Just (cl1,int1) = Map.lookup nd1 (
 
 getInterpolant :: InterpolationState a -> PropL Var
 getInterpolant interp = case Map.lookup (pred $ nextInterpolationNode interp) (interpolationNodes interp) of
-  Just ([],int) -> int
+  Just (cl,int) -> if Map.null cl
+                   then int
+                   else error "Incomplete interpolation"
   _ -> error "Interpolation hasn't completed yet."
 
-simpleLabeling :: (VarLabel -> VarLabel) -> Bool -> (Var -> Bool) -> [Lit] -> LabeledClause Lit
-simpleLabeling f isAPart isShared = fmap (\lit -> if isShared (litVar lit)
-                                                  then (f RedBlue,lit)
-                                                  else (if isAPart
-                                                        then (f Blue,lit)
-                                                        else (f Red,lit)))
+simpleLabeling :: (VarLabel -> VarLabel) -> Bool -> (Var -> Bool) -> [Lit] -> LabeledClause
+simpleLabeling f isAPart isShared
+  = Map.fromList . fmap (\lit -> (litVar lit,(litIsP lit,if isShared (litVar lit)
+                                                         then f RedBlue
+                                                         else (if isAPart
+                                                               then f Blue
+                                                               else f Red))))
 
 data McMillan = McMillan
 
@@ -120,11 +127,12 @@ instance InterpolationSystem HKP where
   labelPartition _ = simpleLabeling id
 
 interpolateProof :: InterpolationSystem a => a -> (Var -> Bool) -> ProofBuilder Bool -> PropL Var
-interpolateProof isys isShared builder = case interpolateProof' isys isShared (proofBuilderGet builder) of
-  ([],int) -> int
-  _ -> error "Unfinished interpolation."
+interpolateProof isys isShared builder = let (cl,int) = interpolateProof' isys isShared (proofBuilderGet builder)
+                                         in if Map.null cl
+                                            then int
+                                            else error "Unfinished interpolation."
 
-interpolateProof' :: InterpolationSystem a => a -> (Var -> Bool) -> ProofNode Bool -> (LabeledClause Lit,PropL Var)
+interpolateProof' :: InterpolationSystem a => a -> (Var -> Bool) -> ProofNode Bool -> (LabeledClause,PropL Var)
 interpolateProof' isys isShared (ProofRoot cl isA) = let labeledCl = labelPartition isys isA isShared (clauseLits cl)
                                                          interp = (if isA
                                                                    then initialAInterpolant
@@ -135,16 +143,16 @@ interpolateProof' isys isShared (ProofChain (nd:nodes) vars)
                                    in interpolate cl int cl2 int2 var'
           ) (interpolateProof' isys isShared nd) (zip nodes vars)
 
-testInterpolation :: (LabeledClause Lit,PropL Var)
+testInterpolation :: (LabeledClause,PropL Var)
 testInterpolation = interpolate cl6 i6 cl4 i4 1
   where
-    cl1 = [(Blue,lp 1),(Blue,ln 2)]
+    cl1 = Map.fromList [(1,(True,Blue)),(2,(False,Blue))]
     i1 = initialAInterpolant cl1
-    cl2 = [(Red,ln 1),(RedBlue,lp 2)]
+    cl2 = Map.fromList [(1,(False,Red)),(2,(True,RedBlue))]
     i2 = initialBInterpolant cl2
-    cl3 = [(Red,lp 1)]
+    cl3 = Map.fromList [(1,(True,Red))]
     i3 = initialBInterpolant cl3
-    cl4 = [(Blue,ln 1)]
+    cl4 = Map.fromList [(1,(False,Blue))]
     i4 = initialAInterpolant cl4
     
     (cl5,i5) = interpolate cl3 i3 cl2 i2 1

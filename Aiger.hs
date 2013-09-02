@@ -13,7 +13,7 @@ import Data.Maybe (catMaybes)
 class AigerC a where
   aigerInputs :: a -> [Var]
   aigerLatches :: a -> [(Var,Bool,Var)]
-  aigerOutputs :: a -> [Var]
+  aigerOutputs :: a -> [Lit]
   aigerGates :: a -> [(Var,Var,Bool,Var,Bool)]
   getGate :: Var -> a -> (Var,Bool,Var,Bool)
   getLatch :: Var -> a -> (Var,Bool)
@@ -23,7 +23,7 @@ class AigerC a where
 instance Literal lit => AigerC (Aiger lit) where
   aigerInputs x = fmap litVar (aigerInputs' x)
   aigerLatches x = [ (litVar l_from,litIsP l_to,litVar l_to) | (l_from,l_to) <- aigerLatches' x ]
-  aigerOutputs x = fmap litVar (aigerOutputs' x)
+  aigerOutputs = fmap (\x -> lit (litVar x) (litIsP x)) . aigerOutputs'
   aigerGates x = [ (litVar g,litVar g1,litIsP g1,litVar g2,litIsP g2) | (g,g1,g2) <- aigerGates' x ]
   getSymbol x aiger = if List.elem x (fmap litVar $ aigerInputs' aiger)
                       then Input
@@ -52,7 +52,7 @@ instance Literal lit => AigerC (Aiger lit) where
 instance AigerC OptimizedAiger where
   aigerInputs x = [Var i | i <- [0..(optAigerInputs x)-1]]
   aigerLatches x = [ (Var (i+(optAigerInputs x)),(latch .&. 1) == 0,Var $ latch `div` 2) | (i,latch) <- UArray.assocs (optAigerLatches x) ]
-  aigerOutputs x = [ Var v | v <- UArray.elems (optAigerOutputs x) ]
+  aigerOutputs x = [ Lit v | v <- UArray.elems (optAigerOutputs x) ]
   aigerGates x = [ (Var g,Var $ g1 `div` 2,(g1 .&. 1)==0,Var $ g2 `div` 2,(g2 .&. 1)==0)
                  | ((g,g1),(_,g2)) <- zip (UArray.assocs (optAigerGatesLHS x)) (UArray.assocs (optAigerGatesRHS x)) ]
   getSymbol (Var gate) aiger = if gate < optAigerInputs aiger
@@ -133,7 +133,7 @@ readAiger str = case lines str of
                       (syms,comms) = parseSymbols xs
                   in ((sym',read num,name):syms,comms)
 
-optimizeAiger :: Literal lit => Aiger lit -> OptimizedAiger
+optimizeAiger :: (Show lit,Literal lit) => Aiger lit -> OptimizedAiger
 optimizeAiger aiger = OptimizedAiger { optAigerInputs = n_inp
                                      , optAigerLatches = latches
                                      , optAigerOutputs = outps
@@ -148,11 +148,14 @@ optimizeAiger aiger = OptimizedAiger { optAigerInputs = n_inp
     ((n_latch,mp2),latch_entrs) = mapAccumL (\(i,cmp) (latch_to,latch_from) -> ((i+1,Map.insert (litVar latch_to) (i+n_inp) cmp),(i,case Map.lookup (litVar latch_from) mp_res of
                                                                                                                                      Just entr -> if litIsP latch_from
                                                                                                                                                   then entr*2
-                                                                                                                                                  else entr*2+1))
+                                                                                                                                                  else entr*2+1
+                                                                                                                                     Nothing -> error ("Latch origin "++show latch_from++" not found.")))
                                             ) (0,mp1) (aigerLatches' aiger)
     latches = UArray.array (0,n_latch-1) latch_entrs
     (n_outp,outp_entrs) = mapAccumL (\i outp -> case Map.lookup (litVar outp) mp_res of
-                                        Just entr -> (i+1,Just (i,entr))
+                                        Just entr -> (i+1,Just (i,if litIsP outp
+                                                                  then entr*2
+                                                                  else entr*2+1))
                                         Nothing -> (i,Nothing)
                                     ) 0 (aigerOutputs' aiger)
     outps = UArray.array (0,n_outp-1) (catMaybes outp_entrs)
@@ -181,7 +184,7 @@ countUses aiger = let inc key = Map.alter (\entr -> case entr of
                                               Just n -> Just (n+1)
                                           ) key
                       mp1 = foldl (\cmp (_,_,latch_from) -> inc latch_from cmp) Map.empty (aigerLatches aiger)
-                      mp2 = foldl (\cmp outp -> inc outp cmp) mp1 (aigerOutputs aiger)
+                      mp2 = foldl (\cmp outp -> inc (litVar outp) cmp) mp1 (aigerOutputs aiger)
                       mp3 = foldl (\cmp (_,in1,_,in2,_) -> if in1==in2
                                                            then inc in1 cmp
                                                            else inc in1 (inc in2 cmp)) mp2 (aigerGates aiger)
