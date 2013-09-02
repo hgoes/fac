@@ -3,6 +3,7 @@ module Minisat
        ,Lit(),lit,lp,ln,litVar,litIsP
        ,Solver()
        ,solverNew
+       ,solverDelete
        ,solverNewVar
        ,solverAddClause
        ,solverOk
@@ -60,6 +61,9 @@ solverSolveWith solver cl = do
 
 foreign import capi "CInterface.h solver_new"
   solverNew :: IO Solver
+
+foreign import capi "CInterface.h solver_delete"
+  solverDelete :: Solver -> IO ()
 
 foreign import capi "CInterface.h solver_add_proof_log"
   solverAddProofLog' :: Solver

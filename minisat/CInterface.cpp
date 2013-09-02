@@ -13,6 +13,9 @@ extern "C" {
   solver_t* solver_new() {
     return new solver_t();
   }
+  void solver_delete(solver_t* self) {
+    delete self;
+  }
   void solver_add_proof_log(solver_t* self,
                             void (*root_fun)(const int* c,int size),
                             void (*chain_fun)(const int* cs,int size1,const int* xs,int size2),
